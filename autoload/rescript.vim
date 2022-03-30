@@ -38,16 +38,16 @@ function! rescript#UpdateProjectEnv()
   else
     " Here we are handling a project that is based on the rescript npm package
     " This package only uses a rescript.exe, no bsc, nor bsb
-    let g:rescript_exe = getcwd() . "/" . l:res_bin_dir . "/rescript.exe"
+    let g:rescript_exe = l:res_bin_dir . "/rescript.exe"
   endif
 
   " These variables are only used in legacy mode (bs-platform based projects)
-  let g:rescript_bsc_exe = getcwd() . "/" . l:res_bin_dir . "/bsc.exe"
-  let g:rescript_bsb_exe = getcwd() . "/" . l:res_bin_dir . "/bsb.exe"
+  let g:rescript_bsc_exe = l:res_bin_dir . "/bsc.exe"
+  let g:rescript_bsb_exe = l:res_bin_dir . "/bsb.exe"
 
   " Note that this doesn't find bsconfig when the editor was started without a
   " specific file within the project
-  let g:rescript_project_config = getcwd() . "/" . findfile("bsconfig.json", ".;")
+  let g:rescript_project_config = findfile("bsconfig.json", ".;")
 
   " Try to find the nearest .git folder instead
   if g:rescript_project_config == ""
