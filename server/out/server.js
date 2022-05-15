@@ -45,13 +45,17 @@ let shutdownRequestAlreadyReceived = false;
 let stupidFileContentCache = new Map();
 let projectsFiles = new Map();
 // ^ caching AND states AND distributed system. Why does LSP has to be stupid like this
+// This keeps track of code actions extracted from diagnostics.
+let codeActionsFromDiagnostics = {};
 // will be properly defined later depending on the mode (stdio/node-rpc)
 let send = (_) => { };
 let createInterfaceRequest = new v.RequestType("rescript-vscode.create_interface");
+let openCompiledFileRequest = new v.RequestType("rescript-vscode.open_compiled");
 let sendUpdatedDiagnostics = () => {
     projectsFiles.forEach(({ filesWithDiagnostics }, projectRootPath) => {
         let content = fs_1.default.readFileSync(path.join(projectRootPath, c.compilerLogPartialPath), { encoding: "utf-8" });
-        let { done, result: filesAndErrors } = utils.parseCompilerLogOutput(content);
+        let { done, result: filesAndErrors, codeActions, } = utils.parseCompilerLogOutput(content);
+        codeActionsFromDiagnostics = codeActions;
         // diff
         Object.keys(filesAndErrors).forEach((file) => {
             let params = {
@@ -105,6 +109,13 @@ let deleteProjectDiagnostics = (projectRootPath) => {
         projectsFiles.delete(projectRootPath);
     }
 };
+let sendCompilationFinishedMessage = () => {
+    let notification = {
+        jsonrpc: c.jsonrpcVersion,
+        method: "rescript/compilationFinished",
+    };
+    send(notification);
+};
 let compilerLogsWatcher = chokidar
     .watch([], {
     awaitWriteFinish: {
@@ -113,6 +124,7 @@ let compilerLogsWatcher = chokidar
 })
     .on("all", (_e, changedPath) => {
     sendUpdatedDiagnostics();
+    sendCompilationFinishedMessage();
 });
 let stopWatchingCompilerLog = () => {
     // TODO: cleanup of compilerLogs?
@@ -220,7 +232,17 @@ else {
 function hover(msg) {
     let params = msg.params;
     let filePath = url_1.fileURLToPath(params.textDocument.uri);
-    let response = utils.runAnalysisCommand(filePath, ["hover", filePath, params.position.line, params.position.character], msg);
+    let code = getOpenedFileContent(params.textDocument.uri);
+    let tmpname = utils.createFileInTempDir();
+    fs_1.default.writeFileSync(tmpname, code, { encoding: "utf-8" });
+    let response = utils.runAnalysisCommand(filePath, [
+        "hover",
+        filePath,
+        params.position.line,
+        params.position.character,
+        tmpname,
+    ], msg);
+    fs_1.default.unlink(tmpname, () => null);
     return response;
 }
 function definition(msg) {
@@ -234,7 +256,12 @@ function typeDefinition(msg) {
     // https://microsoft.github.io/language-server-protocol/specification/specification-current/#textDocument_typeDefinition
     let params = msg.params;
     let filePath = url_1.fileURLToPath(params.textDocument.uri);
-    let response = utils.runAnalysisCommand(filePath, ["typeDefinition", filePath, params.position.line, params.position.character], msg);
+    let response = utils.runAnalysisCommand(filePath, [
+        "typeDefinition",
+        filePath,
+        params.position.line,
+        params.position.character,
+    ], msg);
     return response;
 }
 function references(msg) {
@@ -257,7 +284,7 @@ function prepareRename(msg) {
     let locations = utils.getReferencesForPosition(filePath, params.position);
     let result = null;
     if (locations !== null) {
-        locations.forEach(loc => {
+        locations.forEach((loc) => {
             if (path.normalize(url_1.fileURLToPath(loc.uri)) ===
                 path.normalize(url_1.fileURLToPath(params.textDocument.uri))) {
                 let { start, end } = loc.range;
@@ -268,15 +295,13 @@ function prepareRename(msg) {
                     end.line >= pos.line) {
                     result = loc.range;
                 }
-                ;
             }
         });
     }
-    ;
     return {
         jsonrpc: c.jsonrpcVersion,
         id: msg.id,
-        result
+        result,
     };
 }
 function rename(msg) {
@@ -288,17 +313,16 @@ function rename(msg) {
         filePath,
         params.position.line,
         params.position.character,
-        params.newName
+        params.newName,
     ]);
     let result = null;
     if (documentChanges !== null) {
         result = { documentChanges };
     }
-    ;
     let response = {
         jsonrpc: c.jsonrpcVersion,
         id: msg.id,
-        result
+        result,
     };
     return response;
 }
@@ -306,12 +330,33 @@ function documentSymbol(msg) {
     // https://microsoft.github.io/language-server-protocol/specifications/specification-current/#textDocument_documentSymbol
     let params = msg.params;
     let filePath = url_1.fileURLToPath(params.textDocument.uri);
-    let response = utils.runAnalysisCommand(filePath, ["documentSymbol", filePath], msg);
+    let extension = path.extname(params.textDocument.uri);
+    let code = getOpenedFileContent(params.textDocument.uri);
+    let tmpname = utils.createFileInTempDir(extension);
+    fs_1.default.writeFileSync(tmpname, code, { encoding: "utf-8" });
+    let response = utils.runAnalysisCommand(filePath, ["documentSymbol", tmpname], msg, 
+    /* projectRequired */ false);
+    fs_1.default.unlink(tmpname, () => null);
+    return response;
+}
+function semanticTokens(msg) {
+    // https://microsoft.github.io/language-server-protocol/specifications/specification-current/#textDocument_semanticTokens
+    let params = msg.params;
+    let filePath = url_1.fileURLToPath(params.textDocument.uri);
+    let extension = path.extname(params.textDocument.uri);
+    let code = getOpenedFileContent(params.textDocument.uri);
+    let tmpname = utils.createFileInTempDir(extension);
+    fs_1.default.writeFileSync(tmpname, code, { encoding: "utf-8" });
+    let response = utils.runAnalysisCommand(filePath, ["semanticTokens", tmpname], msg, 
+    /* projectRequired */ false);
+    fs_1.default.unlink(tmpname, () => null);
     return response;
 }
 function completion(msg) {
+    // https://microsoft.github.io/language-server-protocol/specifications/specification-current/#textDocument_completion
     let params = msg.params;
     let filePath = url_1.fileURLToPath(params.textDocument.uri);
+    let extension = path.extname(params.textDocument.uri);
     let code = getOpenedFileContent(params.textDocument.uri);
     let tmpname = utils.createFileInTempDir();
     fs_1.default.writeFileSync(tmpname, code, { encoding: "utf-8" });
@@ -324,6 +369,41 @@ function completion(msg) {
     ], msg);
     fs_1.default.unlink(tmpname, () => null);
     return response;
+}
+function codeAction(msg) {
+    var _a;
+    let params = msg.params;
+    let filePath = url_1.fileURLToPath(params.textDocument.uri);
+    let code = getOpenedFileContent(params.textDocument.uri);
+    let extension = path.extname(params.textDocument.uri);
+    let tmpname = utils.createFileInTempDir(extension);
+    // Check local code actions coming from the diagnostics.
+    let localResults = [];
+    (_a = codeActionsFromDiagnostics[params.textDocument.uri]) === null || _a === void 0 ? void 0 : _a.forEach(({ range, codeAction }) => {
+        if (utils.rangeContainsRange(range, params.range)) {
+            localResults.push(codeAction);
+        }
+    });
+    fs_1.default.writeFileSync(tmpname, code, { encoding: "utf-8" });
+    let response = utils.runAnalysisCommand(filePath, [
+        "codeAction",
+        filePath,
+        params.range.start.line,
+        params.range.start.character,
+        tmpname,
+    ], msg);
+    fs_1.default.unlink(tmpname, () => null);
+    let { result } = response;
+    // We must send `null` when there are no results, empty array isn't enough.
+    let codeActions = result != null && Array.isArray(result)
+        ? [...localResults, ...result]
+        : localResults;
+    let res = {
+        jsonrpc: c.jsonrpcVersion,
+        id: msg.id,
+        result: codeActions.length > 0 ? codeActions : null,
+    };
+    return res;
 }
 function format(msg) {
     // technically, a formatting failure should reply with the error. Sadly
@@ -354,50 +434,33 @@ function format(msg) {
         return [fakeSuccessResponse, response];
     }
     else {
-        // See comment on findBscNativeDirOfFile for why we need
-        // to recursively search for bsc.exe upward
-        let bscNativePath = utils.findBscNativeOfFile(filePath);
-        if (bscNativePath === null) {
-            let params = {
-                type: p.MessageType.Error,
-                message: `Cannot find a nearby bsc.exe in rescript or bs-platform. It's needed for formatting.`,
-            };
+        // code will always be defined here, even though technically it can be undefined
+        let code = getOpenedFileContent(params.textDocument.uri);
+        let formattedResult = utils.formatCode(filePath, code);
+        if (formattedResult.kind === "success") {
+            let max = code.length;
+            let result = [
+                {
+                    range: {
+                        start: { line: 0, character: 0 },
+                        end: { line: max, character: max },
+                    },
+                    newText: formattedResult.result,
+                },
+            ];
             let response = {
                 jsonrpc: c.jsonrpcVersion,
-                method: "window/showMessage",
-                params: params,
+                id: msg.id,
+                result: result,
             };
-            return [fakeSuccessResponse, response];
+            return [response];
         }
         else {
-            // code will always be defined here, even though technically it can be undefined
-            let code = getOpenedFileContent(params.textDocument.uri);
-            let formattedResult = utils.formatUsingValidBscNativePath(code, bscNativePath, extension === c.resiExt);
-            if (formattedResult.kind === "success") {
-                let max = code.length;
-                let result = [
-                    {
-                        range: {
-                            start: { line: 0, character: 0 },
-                            end: { line: max, character: max },
-                        },
-                        newText: formattedResult.result,
-                    },
-                ];
-                let response = {
-                    jsonrpc: c.jsonrpcVersion,
-                    id: msg.id,
-                    result: result,
-                };
-                return [response];
-            }
-            else {
-                // let the diagnostics logic display the updated syntax errors,
-                // from the build.
-                // Again, not sending the actual errors. See fakeSuccessResponse
-                // above for explanation
-                return [fakeSuccessResponse];
-            }
+            // let the diagnostics logic display the updated syntax errors,
+            // from the build.
+            // Again, not sending the actual errors. See fakeSuccessResponse
+            // above for explanation
+            return [fakeSuccessResponse];
         }
     }
 }
@@ -405,14 +468,11 @@ function createInterface(msg) {
     let params = msg.params;
     let extension = path.extname(params.uri);
     let filePath = url_1.fileURLToPath(params.uri);
-    let bscNativePath = utils.findBscNativeOfFile(filePath);
     let projDir = utils.findProjectRootOfFile(filePath);
-    let code = getOpenedFileContent(params.uri);
-    let isReactComponent = code.includes("@react.component");
-    if (bscNativePath === null || projDir === null) {
+    if (projDir === null) {
         let params = {
             type: p.MessageType.Error,
-            message: `Cannot find a nearby bsc.exe to generate the interface file.`,
+            message: `Cannot locate project directory to generate the interface file.`,
         };
         let response = {
             jsonrpc: c.jsonrpcVersion,
@@ -433,19 +493,24 @@ function createInterface(msg) {
         };
         return response;
     }
-    if (isReactComponent) {
+    let resPartialPath = filePath.split(projDir)[1];
+    // The .cmi filename may have a namespace suffix appended.
+    let namespaceResult = utils.getNamespaceNameFromBsConfig(projDir);
+    if (namespaceResult.kind === "error") {
         let params = {
             type: p.MessageType.Error,
-            message: `Creating an interface with @react.component is not currently supported.`,
+            message: `Error reading bsconfig file.`,
         };
         let response = {
             jsonrpc: c.jsonrpcVersion,
             method: "window/showMessage",
-            params: params,
+            params,
         };
         return response;
     }
-    let cmiPartialPath = utils.replaceFileExtension(filePath.split(projDir)[1], c.cmiExt);
+    let namespace = namespaceResult.result;
+    let suffixToAppend = namespace.length > 0 ? "-" + namespace : "";
+    let cmiPartialPath = path.join(path.dirname(resPartialPath), path.basename(resPartialPath, c.resExt) + suffixToAppend + c.cmiExt);
     let cmiPath = path.join(projDir, c.compilerDirPartialPath, cmiPartialPath);
     let cmiAvailable = fs_1.default.existsSync(cmiPath);
     if (!cmiAvailable) {
@@ -460,16 +525,19 @@ function createInterface(msg) {
         };
         return response;
     }
-    let intfResult = utils.createInterfaceFileUsingValidBscExePath(filePath, cmiPath, bscNativePath);
-    if (intfResult.kind === "success") {
+    let response = utils.runAnalysisCommand(filePath, ["createInterface", filePath, cmiPath], msg);
+    let result = typeof response.result === "string" ? response.result : "";
+    try {
+        let resiPath = utils.replaceFileExtension(filePath, c.resiExt);
+        fs_1.default.writeFileSync(resiPath, result, { encoding: "utf-8" });
         let response = {
             jsonrpc: c.jsonrpcVersion,
             id: msg.id,
-            result: intfResult.result,
+            result: "Interface successfully created.",
         };
         return response;
     }
-    else {
+    catch (e) {
         let response = {
             jsonrpc: c.jsonrpcVersion,
             id: msg.id,
@@ -480,6 +548,49 @@ function createInterface(msg) {
         };
         return response;
     }
+}
+function openCompiledFile(msg) {
+    let params = msg.params;
+    let filePath = url_1.fileURLToPath(params.uri);
+    let projDir = utils.findProjectRootOfFile(filePath);
+    if (projDir === null) {
+        let params = {
+            type: p.MessageType.Error,
+            message: `Cannot locate project directory.`,
+        };
+        let response = {
+            jsonrpc: c.jsonrpcVersion,
+            method: "window/showMessage",
+            params: params,
+        };
+        return response;
+    }
+    let compiledFilePath = utils.getCompiledFilePath(filePath, projDir);
+    if (compiledFilePath.kind === "error" ||
+        !fs_1.default.existsSync(compiledFilePath.result)) {
+        let message = compiledFilePath.kind === "success"
+            ? `No compiled file found. Expected it at: ${compiledFilePath.result}`
+            : `No compiled file found. Please compile your project first.`;
+        let params = {
+            type: p.MessageType.Error,
+            message,
+        };
+        let response = {
+            jsonrpc: c.jsonrpcVersion,
+            method: "window/showMessage",
+            params,
+        };
+        return response;
+    }
+    let result = {
+        uri: compiledFilePath.result,
+    };
+    let response = {
+        jsonrpc: c.jsonrpcVersion,
+        id: msg.id,
+        result,
+    };
+    return response;
 }
 function onMessage(msg) {
     if (m.isNotificationMessage(msg)) {
@@ -501,9 +612,7 @@ function onMessage(msg) {
         else if (msg.method === vscode_languageserver_protocol_1.DidOpenTextDocumentNotification.method) {
             let params = msg.params;
             let extName = path.extname(params.textDocument.uri);
-            if (extName === c.resExt || extName === c.resiExt) {
-                openedFile(params.textDocument.uri, params.textDocument.text);
-            }
+            openedFile(params.textDocument.uri, params.textDocument.text);
         }
         else if (msg.method === vscode_languageserver_protocol_1.DidChangeTextDocumentNotification.method) {
             let params = msg.params;
@@ -551,10 +660,28 @@ function onMessage(msg) {
                     definitionProvider: true,
                     typeDefinitionProvider: true,
                     referencesProvider: true,
+                    codeActionProvider: true,
                     renameProvider: { prepareProvider: true },
-                    // disabled right now until we use the parser to show non-stale symbols per keystroke
-                    // documentSymbolProvider: true,
-                    completionProvider: { triggerCharacters: [".", ">", "@", "~"] },
+                    documentSymbolProvider: true,
+                    completionProvider: { triggerCharacters: [".", ">", "@", "~", '"'] },
+                    semanticTokensProvider: {
+                        legend: {
+                            tokenTypes: [
+                                "operator",
+                                "variable",
+                                "support-type-primitive",
+                                "jsx-tag",
+                                "class",
+                                "enumMember",
+                                "property",
+                                "jsx-lowercase",
+                            ],
+                            tokenModifiers: [],
+                        },
+                        documentSelector: null,
+                        // TODO: Support range for full, and add delta support
+                        full: true,
+                    },
                 },
             };
             let response = {
@@ -624,12 +751,21 @@ function onMessage(msg) {
         else if (msg.method === p.CompletionRequest.method) {
             send(completion(msg));
         }
+        else if (msg.method === p.SemanticTokensRequest.method) {
+            send(semanticTokens(msg));
+        }
+        else if (msg.method === p.CodeActionRequest.method) {
+            send(codeAction(msg));
+        }
         else if (msg.method === p.DocumentFormattingRequest.method) {
             let responses = format(msg);
             responses.forEach((response) => send(response));
         }
         else if (msg.method === createInterfaceRequest.method) {
             send(createInterface(msg));
+        }
+        else if (msg.method === openCompiledFileRequest.method) {
+            send(openCompiledFile(msg));
         }
         else {
             let response = {

@@ -22,8 +22,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.parseCompilerLogOutput = exports.runBuildWatcherUsingValidBuildPath = exports.createInterfaceFileUsingValidBscExePath = exports.replaceFileExtension = exports.getReferencesForPosition = exports.runAnalysisCommand = exports.runAnalysisAfterSanityCheck = exports.formatUsingValidBscNativePath = exports.findNodeBuildOfProjectRoot = exports.findBscNativeOfFile = exports.findProjectRootOfFile = exports.createFileInTempDir = void 0;
+exports.rangeContainsRange = exports.parseCompilerLogOutput = exports.runBuildWatcherUsingValidBuildPath = exports.getCompiledFilePath = exports.getNamespaceNameFromBsConfig = exports.toCamelCase = exports.replaceFileExtension = exports.getReferencesForPosition = exports.runAnalysisCommand = exports.runAnalysisAfterSanityCheck = exports.formatCode = exports.findNodeBuildOfProjectRoot = exports.findBscNativeOfFile = exports.findProjectRootOfFile = exports.createFileInTempDir = void 0;
 const c = __importStar(require("./constants"));
+const codeActions = __importStar(require("./codeActions"));
 const childProcess = __importStar(require("child_process"));
 const path = __importStar(require("path"));
 const t = __importStar(require("vscode-languageserver-types"));
@@ -88,39 +89,69 @@ let findBscNativeOfFile = (source) => {
 exports.findBscNativeOfFile = findBscNativeOfFile;
 // TODO: this doesn't handle file:/// scheme
 let findNodeBuildOfProjectRoot = (projectRootPath) => {
-    let rescriptNodePath = path.join(projectRootPath, c.rescriptNodePartialPath);
-    let bsbNodePath = path.join(projectRootPath, c.bsbNodePartialPath);
-    if (fs_1.default.existsSync(rescriptNodePath)) {
-        return { buildPath: rescriptNodePath, isReScript: true };
+    while (true) {
+        let rescriptNodePath = path.join(projectRootPath, c.rescriptNodePartialPath);
+        let bsbNodePath = path.join(projectRootPath, c.bsbNodePartialPath);
+        if (fs_1.default.existsSync(rescriptNodePath)) {
+            return { buildPath: rescriptNodePath, isReScript: true };
+        }
+        else if (fs_1.default.existsSync(bsbNodePath)) {
+            return { buildPath: bsbNodePath, isReScript: false };
+        }
+        else {
+            let parent = path.dirname(projectRootPath);
+            if (fs_1.default.existsSync(parent) && parent != projectRootPath) {
+                projectRootPath = parent;
+            }
+            else {
+                return null;
+            }
+        }
     }
-    else if (fs_1.default.existsSync(bsbNodePath)) {
-        return { buildPath: bsbNodePath, isReScript: false };
-    }
-    return null;
 };
 exports.findNodeBuildOfProjectRoot = findNodeBuildOfProjectRoot;
-let formatUsingValidBscNativePath = (code, bscNativePath, isInterface) => {
-    let extension = isInterface ? c.resiExt : c.resExt;
+let formatCode = (filePath, code) => {
+    let extension = path.extname(filePath);
     let formatTempFileFullPath = exports.createFileInTempDir(extension);
     fs_1.default.writeFileSync(formatTempFileFullPath, code, {
         encoding: "utf-8",
     });
     try {
-        let result = childProcess.execFileSync(bscNativePath, [
-            "-color",
-            "never",
-            "-format",
-            formatTempFileFullPath,
-        ]);
-        return {
-            kind: "success",
-            result: result.toString(),
-        };
+        // See comment on findBscNativeDirOfFile for why we need
+        // to recursively search for bsc.exe upward
+        let bscNativePath = exports.findBscNativeOfFile(filePath);
+        // Default to using the project formatter. If not, use the one we ship with
+        // the analysis binary in the extension itself.
+        if (bscNativePath != null) {
+            let result = childProcess.execFileSync(bscNativePath, [
+                "-color",
+                "never",
+                "-format",
+                formatTempFileFullPath,
+            ]);
+            return {
+                kind: "success",
+                result: result.toString(),
+            };
+        }
+        else {
+            let result = exports.runAnalysisAfterSanityCheck(formatTempFileFullPath, ["format", formatTempFileFullPath], false);
+            // The formatter returning an empty string means it couldn't format the
+            // sources, probably because of errors. In that case, we bail from
+            // formatting by returning the unformatted content.
+            if (result === "") {
+                result = code;
+            }
+            return {
+                kind: "success",
+                result,
+            };
+        }
     }
     catch (e) {
         return {
             kind: "error",
-            error: e.message,
+            error: e instanceof Error ? e.message : String(e),
         };
     }
     finally {
@@ -128,8 +159,8 @@ let formatUsingValidBscNativePath = (code, bscNativePath, isInterface) => {
         fs_1.default.unlink(formatTempFileFullPath, () => null);
     }
 };
-exports.formatUsingValidBscNativePath = formatUsingValidBscNativePath;
-let runAnalysisAfterSanityCheck = (filePath, args) => {
+exports.formatCode = formatCode;
+let runAnalysisAfterSanityCheck = (filePath, args, projectRequired = false) => {
     let binaryPath;
     if (fs_1.default.existsSync(c.analysisDevPath)) {
         binaryPath = c.analysisDevPath;
@@ -141,17 +172,19 @@ let runAnalysisAfterSanityCheck = (filePath, args) => {
         return null;
     }
     let projectRootPath = exports.findProjectRootOfFile(filePath);
-    if (projectRootPath == null) {
+    if (projectRootPath == null && projectRequired) {
         return null;
     }
-    let stdout = childProcess.execFileSync(binaryPath, args, {
-        cwd: projectRootPath,
-    });
+    let options = {
+        cwd: projectRootPath || undefined,
+        maxBuffer: Infinity,
+    };
+    let stdout = childProcess.execFileSync(binaryPath, args, options);
     return JSON.parse(stdout.toString());
 };
 exports.runAnalysisAfterSanityCheck = runAnalysisAfterSanityCheck;
-let runAnalysisCommand = (filePath, args, msg) => {
-    let result = exports.runAnalysisAfterSanityCheck(filePath, args);
+let runAnalysisCommand = (filePath, args, msg, projectRequired = true) => {
+    let result = exports.runAnalysisAfterSanityCheck(filePath, args, projectRequired);
     let response = {
         jsonrpc: c.jsonrpcVersion,
         id: msg.id,
@@ -172,28 +205,104 @@ let replaceFileExtension = (filePath, ext) => {
     return path.format({ dir: path.dirname(filePath), name, ext });
 };
 exports.replaceFileExtension = replaceFileExtension;
-let createInterfaceFileUsingValidBscExePath = (filePath, cmiPath, bscExePath) => {
+const toCamelCase = (text) => {
+    return text
+        .replace(/(?:^\w|[A-Z]|\b\w)/g, (s) => s.toUpperCase())
+        .replace(/(\s|-)+/g, "");
+};
+exports.toCamelCase = toCamelCase;
+const readBsConfig = (projDir) => {
     try {
-        let resiString = childProcess.execFileSync(bscExePath, [
-            "-color",
-            "never",
-            cmiPath,
-        ]);
-        let resiPath = exports.replaceFileExtension(filePath, c.resiExt);
-        fs_1.default.writeFileSync(resiPath, resiString, { encoding: "utf-8" });
-        return {
-            kind: "success",
-            result: "Interface successfully created.",
-        };
+        let bsconfigFile = fs_1.default.readFileSync(path.join(projDir, c.bsconfigPartialPath), { encoding: "utf-8" });
+        let result = JSON.parse(bsconfigFile);
+        return result;
     }
     catch (e) {
-        return {
-            kind: "error",
-            error: e.message,
-        };
+        return null;
     }
 };
-exports.createInterfaceFileUsingValidBscExePath = createInterfaceFileUsingValidBscExePath;
+const getNamespaceNameFromBsConfig = (projDir) => {
+    let bsconfig = readBsConfig(projDir);
+    let result = "";
+    if (!bsconfig) {
+        return {
+            kind: "error",
+            error: "Could not read bsconfig",
+        };
+    }
+    if (bsconfig.namespace === true) {
+        result = exports.toCamelCase(bsconfig.name);
+    }
+    else if (typeof bsconfig.namespace === "string") {
+        result = exports.toCamelCase(bsconfig.namespace);
+    }
+    return {
+        kind: "success",
+        result,
+    };
+};
+exports.getNamespaceNameFromBsConfig = getNamespaceNameFromBsConfig;
+let getCompiledFolderName = (moduleFormat) => {
+    switch (moduleFormat) {
+        case "es6":
+            return "es6";
+        case "es6-global":
+            return "es6_global";
+        case "commonjs":
+        default:
+            return "js";
+    }
+};
+let getCompiledFilePath = (filePath, projDir) => {
+    let bsconfig = readBsConfig(projDir);
+    if (!bsconfig) {
+        return {
+            kind: "error",
+            error: "Could not read bsconfig",
+        };
+    }
+    let pkgSpecs = bsconfig["package-specs"];
+    let pathFragment = "";
+    let moduleFormatObj = {};
+    let module = c.bsconfigModuleDefault;
+    let suffix = c.bsconfigSuffixDefault;
+    if (pkgSpecs) {
+        if (pkgSpecs.module) {
+            moduleFormatObj = pkgSpecs;
+        }
+        else if (typeof pkgSpecs === "string") {
+            module = pkgSpecs;
+        }
+        else if (pkgSpecs[0]) {
+            if (typeof pkgSpecs[0] === "string") {
+                module = pkgSpecs[0];
+            }
+            else {
+                moduleFormatObj = pkgSpecs[0];
+            }
+        }
+    }
+    if (moduleFormatObj["module"]) {
+        module = moduleFormatObj["module"];
+    }
+    if (!moduleFormatObj["in-source"]) {
+        pathFragment = "lib/" + getCompiledFolderName(module);
+    }
+    if (moduleFormatObj.suffix) {
+        suffix = moduleFormatObj.suffix;
+    }
+    else if (bsconfig.suffix) {
+        suffix = bsconfig.suffix;
+    }
+    let partialFilePath = filePath.split(projDir)[1];
+    let compiledPartialPath = exports.replaceFileExtension(partialFilePath, suffix);
+    let result = path.join(projDir, pathFragment, compiledPartialPath);
+    return {
+        kind: "success",
+        result,
+    };
+};
+exports.getCompiledFilePath = getCompiledFilePath;
 let runBuildWatcherUsingValidBuildPath = (buildPath, isRescript, projectRootPath) => {
     let cwdEnv = {
         cwd: projectRootPath,
@@ -347,6 +456,23 @@ let parseCompilerLogOutput = (content) => {
                 content: [],
             });
         }
+        else if (line.startsWith("FAILED:")) {
+            // File with a self cycle
+            parsedDiagnostics.push({
+                code: undefined,
+                severity: t.DiagnosticSeverity.Error,
+                tag: undefined,
+                content: [line],
+            });
+        }
+        else if (line.startsWith("Fatal error:")) {
+            parsedDiagnostics.push({
+                code: undefined,
+                severity: t.DiagnosticSeverity.Error,
+                tag: undefined,
+                content: [line],
+            });
+        }
         else if (line.startsWith("  Warning number ")) {
             let warningNumber = parseInt(line.slice("  Warning number ".length));
             let tag = undefined;
@@ -373,9 +499,12 @@ let parseCompilerLogOutput = (content) => {
                     tag = t.DiagnosticTag.Deprecated;
                     break;
             }
+            let severity = line.includes("(configured as error)")
+                ? t.DiagnosticSeverity.Error
+                : t.DiagnosticSeverity.Warning;
             parsedDiagnostics.push({
                 code: Number.isNaN(warningNumber) ? undefined : warningNumber,
-                severity: t.DiagnosticSeverity.Warning,
+                severity,
                 tag: tag,
                 content: [],
             });
@@ -393,6 +522,12 @@ let parseCompilerLogOutput = (content) => {
         }
         else if (line.startsWith("#Done(")) {
             done = true;
+        }
+        else if (line.startsWith("File ") &&
+            i + 1 < lines.length &&
+            lines[i + 1].startsWith("Warning ")) {
+            // OCaml warning: skip
+            i++;
         }
         else if (/^  +([0-9]+| +|\.) (│|┆)/.test(line)) {
             //         ^^ indent
@@ -419,13 +554,14 @@ let parseCompilerLogOutput = (content) => {
         }
     }
     let result = {};
+    let foundCodeActions = {};
     parsedDiagnostics.forEach((parsedDiagnostic) => {
         let [fileAndRangeLine, ...diagnosticMessage] = parsedDiagnostic.content;
         let { file, range } = parseFileAndRange(fileAndRangeLine);
         if (result[file] == null) {
             result[file] = [];
         }
-        result[file].push({
+        let diagnostic = {
             severity: parsedDiagnostic.severity,
             tags: parsedDiagnostic.tag === undefined ? [] : [parsedDiagnostic.tag],
             code: parsedDiagnostic.code,
@@ -433,9 +569,38 @@ let parseCompilerLogOutput = (content) => {
             source: "ReScript",
             // remove start and end whitespaces/newlines
             message: diagnosticMessage.join("\n").trim() + "\n",
+        };
+        // Check for potential code actions
+        codeActions.findCodeActionsInDiagnosticsMessage({
+            addFoundActionsHere: foundCodeActions,
+            diagnostic,
+            diagnosticMessage,
+            file,
+            range,
         });
+        result[file].push(diagnostic);
     });
-    return { done, result };
+    return { done, result, codeActions: foundCodeActions };
 };
 exports.parseCompilerLogOutput = parseCompilerLogOutput;
+let rangeContainsRange = (range, otherRange) => {
+    if (otherRange.start.line < range.start.line ||
+        otherRange.end.line < range.start.line) {
+        return false;
+    }
+    if (otherRange.start.line > range.end.line ||
+        otherRange.end.line > range.end.line) {
+        return false;
+    }
+    if (otherRange.start.line === range.start.line &&
+        otherRange.start.character < range.start.character) {
+        return false;
+    }
+    if (otherRange.end.line === range.end.line &&
+        otherRange.end.character > range.end.character) {
+        return false;
+    }
+    return true;
+};
+exports.rangeContainsRange = rangeContainsRange;
 //# sourceMappingURL=utils.js.map

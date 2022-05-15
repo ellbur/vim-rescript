@@ -19,7 +19,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.startBuildAction = exports.cmiExt = exports.resiExt = exports.resExt = exports.compilerLogPartialPath = exports.compilerDirPartialPath = exports.bsconfigPartialPath = exports.bsbLock = exports.bsbNodePartialPath = exports.rescriptNodePartialPath = exports.analysisProdPath = exports.analysisDevPath = exports.bscNativePartialPath = exports.bscNativeReScriptPartialPath = exports.jsonrpcVersion = void 0;
+exports.bsconfigSuffixDefault = exports.bsconfigModuleDefault = exports.startBuildAction = exports.cmiExt = exports.resiExt = exports.resExt = exports.compilerLogPartialPath = exports.compilerDirPartialPath = exports.bsconfigPartialPath = exports.bsbLock = exports.bsbNodePartialPath = exports.rescriptNodePartialPath = exports.analysisProdPath = exports.analysisDevPath = exports.bscNativePartialPath = exports.bscNativeReScriptPartialPath = exports.jsonrpcVersion = void 0;
 const path = __importStar(require("path"));
 // See https://microsoft.github.io/language-server-protocol/specification Abstract Message
 // version is fixed to 2.0
@@ -39,4 +39,7 @@ exports.resExt = ".res";
 exports.resiExt = ".resi";
 exports.cmiExt = ".cmi";
 exports.startBuildAction = "Start Build";
+// bsconfig defaults according configuration schema (https://rescript-lang.org/docs/manual/latest/build-configuration-schema)
+exports.bsconfigModuleDefault = "commonjs";
+exports.bsconfigSuffixDefault = ".js";
 //# sourceMappingURL=constants.js.map
