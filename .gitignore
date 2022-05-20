@@ -41,6 +41,7 @@ server/analysis_binaries/README.md
 !server/**/node_modules/
 !server/analysis_binaries/darwin/rescript-editor-analysis.exe
 !server/analysis_binaries/linux/rescript-editor-analysis.exe
+!server/analysis_binaries/linux-aarch64/rescript-editor-analysis.exe
 !server/analysis_binaries/win32/rescript-editor-analysis.exe
 
 examples/**/node_modules
