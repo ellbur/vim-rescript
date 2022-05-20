@@ -1,7 +1,11 @@
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
 }) : (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];
@@ -131,7 +135,7 @@ let stopWatchingCompilerLog = () => {
     compilerLogsWatcher.close();
 };
 let openedFile = (fileUri, fileContent) => {
-    let filePath = url_1.fileURLToPath(fileUri);
+    let filePath = (0, url_1.fileURLToPath)(fileUri);
     stupidFileContentCache.set(filePath, fileContent);
     let projectRootPath = utils.findProjectRootOfFile(filePath);
     if (projectRootPath != null) {
@@ -183,7 +187,7 @@ let openedFile = (fileUri, fileContent) => {
     }
 };
 let closedFile = (fileUri) => {
-    let filePath = url_1.fileURLToPath(fileUri);
+    let filePath = (0, url_1.fileURLToPath)(fileUri);
     stupidFileContentCache.delete(filePath);
     let projectRootPath = utils.findProjectRootOfFile(filePath);
     if (projectRootPath != null) {
@@ -203,14 +207,14 @@ let closedFile = (fileUri) => {
     }
 };
 let updateOpenedFile = (fileUri, fileContent) => {
-    let filePath = url_1.fileURLToPath(fileUri);
-    console_1.assert(stupidFileContentCache.has(filePath));
+    let filePath = (0, url_1.fileURLToPath)(fileUri);
+    (0, console_1.assert)(stupidFileContentCache.has(filePath));
     stupidFileContentCache.set(filePath, fileContent);
 };
 let getOpenedFileContent = (fileUri) => {
-    let filePath = url_1.fileURLToPath(fileUri);
+    let filePath = (0, url_1.fileURLToPath)(fileUri);
     let content = stupidFileContentCache.get(filePath);
-    console_1.assert(content != null);
+    (0, console_1.assert)(content != null);
     return content;
 };
 // Start listening now!
@@ -231,7 +235,7 @@ else {
 }
 function hover(msg) {
     let params = msg.params;
-    let filePath = url_1.fileURLToPath(params.textDocument.uri);
+    let filePath = (0, url_1.fileURLToPath)(params.textDocument.uri);
     let code = getOpenedFileContent(params.textDocument.uri);
     let tmpname = utils.createFileInTempDir();
     fs_1.default.writeFileSync(tmpname, code, { encoding: "utf-8" });
@@ -248,14 +252,14 @@ function hover(msg) {
 function definition(msg) {
     // https://microsoft.github.io/language-server-protocol/specifications/specification-current/#textDocument_definition
     let params = msg.params;
-    let filePath = url_1.fileURLToPath(params.textDocument.uri);
+    let filePath = (0, url_1.fileURLToPath)(params.textDocument.uri);
     let response = utils.runAnalysisCommand(filePath, ["definition", filePath, params.position.line, params.position.character], msg);
     return response;
 }
 function typeDefinition(msg) {
     // https://microsoft.github.io/language-server-protocol/specification/specification-current/#textDocument_typeDefinition
     let params = msg.params;
-    let filePath = url_1.fileURLToPath(params.textDocument.uri);
+    let filePath = (0, url_1.fileURLToPath)(params.textDocument.uri);
     let response = utils.runAnalysisCommand(filePath, [
         "typeDefinition",
         filePath,
@@ -267,7 +271,7 @@ function typeDefinition(msg) {
 function references(msg) {
     // https://microsoft.github.io/language-server-protocol/specifications/specification-current/#textDocument_references
     let params = msg.params;
-    let filePath = url_1.fileURLToPath(params.textDocument.uri);
+    let filePath = (0, url_1.fileURLToPath)(params.textDocument.uri);
     let result = utils.getReferencesForPosition(filePath, params.position);
     let response = {
         jsonrpc: c.jsonrpcVersion,
@@ -280,13 +284,13 @@ function references(msg) {
 function prepareRename(msg) {
     // https://microsoft.github.io/language-server-protocol/specifications/specification-current/#textDocument_prepareRename
     let params = msg.params;
-    let filePath = url_1.fileURLToPath(params.textDocument.uri);
+    let filePath = (0, url_1.fileURLToPath)(params.textDocument.uri);
     let locations = utils.getReferencesForPosition(filePath, params.position);
     let result = null;
     if (locations !== null) {
         locations.forEach((loc) => {
-            if (path.normalize(url_1.fileURLToPath(loc.uri)) ===
-                path.normalize(url_1.fileURLToPath(params.textDocument.uri))) {
+            if (path.normalize((0, url_1.fileURLToPath)(loc.uri)) ===
+                path.normalize((0, url_1.fileURLToPath)(params.textDocument.uri))) {
                 let { start, end } = loc.range;
                 let pos = params.position;
                 if (start.character <= pos.character &&
@@ -307,7 +311,7 @@ function prepareRename(msg) {
 function rename(msg) {
     // https://microsoft.github.io/language-server-protocol/specifications/specification-current/#textDocument_rename
     let params = msg.params;
-    let filePath = url_1.fileURLToPath(params.textDocument.uri);
+    let filePath = (0, url_1.fileURLToPath)(params.textDocument.uri);
     let documentChanges = utils.runAnalysisAfterSanityCheck(filePath, [
         "rename",
         filePath,
@@ -329,7 +333,7 @@ function rename(msg) {
 function documentSymbol(msg) {
     // https://microsoft.github.io/language-server-protocol/specifications/specification-current/#textDocument_documentSymbol
     let params = msg.params;
-    let filePath = url_1.fileURLToPath(params.textDocument.uri);
+    let filePath = (0, url_1.fileURLToPath)(params.textDocument.uri);
     let extension = path.extname(params.textDocument.uri);
     let code = getOpenedFileContent(params.textDocument.uri);
     let tmpname = utils.createFileInTempDir(extension);
@@ -342,7 +346,7 @@ function documentSymbol(msg) {
 function semanticTokens(msg) {
     // https://microsoft.github.io/language-server-protocol/specifications/specification-current/#textDocument_semanticTokens
     let params = msg.params;
-    let filePath = url_1.fileURLToPath(params.textDocument.uri);
+    let filePath = (0, url_1.fileURLToPath)(params.textDocument.uri);
     let extension = path.extname(params.textDocument.uri);
     let code = getOpenedFileContent(params.textDocument.uri);
     let tmpname = utils.createFileInTempDir(extension);
@@ -355,7 +359,7 @@ function semanticTokens(msg) {
 function completion(msg) {
     // https://microsoft.github.io/language-server-protocol/specifications/specification-current/#textDocument_completion
     let params = msg.params;
-    let filePath = url_1.fileURLToPath(params.textDocument.uri);
+    let filePath = (0, url_1.fileURLToPath)(params.textDocument.uri);
     let extension = path.extname(params.textDocument.uri);
     let code = getOpenedFileContent(params.textDocument.uri);
     let tmpname = utils.createFileInTempDir();
@@ -373,7 +377,7 @@ function completion(msg) {
 function codeAction(msg) {
     var _a;
     let params = msg.params;
-    let filePath = url_1.fileURLToPath(params.textDocument.uri);
+    let filePath = (0, url_1.fileURLToPath)(params.textDocument.uri);
     let code = getOpenedFileContent(params.textDocument.uri);
     let extension = path.extname(params.textDocument.uri);
     let tmpname = utils.createFileInTempDir(extension);
@@ -419,7 +423,7 @@ function format(msg) {
         result: [],
     };
     let params = msg.params;
-    let filePath = url_1.fileURLToPath(params.textDocument.uri);
+    let filePath = (0, url_1.fileURLToPath)(params.textDocument.uri);
     let extension = path.extname(params.textDocument.uri);
     if (extension !== c.resExt && extension !== c.resiExt) {
         let params = {
@@ -467,7 +471,7 @@ function format(msg) {
 function createInterface(msg) {
     let params = msg.params;
     let extension = path.extname(params.uri);
-    let filePath = url_1.fileURLToPath(params.uri);
+    let filePath = (0, url_1.fileURLToPath)(params.uri);
     let projDir = utils.findProjectRootOfFile(filePath);
     if (projDir === null) {
         let params = {
@@ -551,7 +555,7 @@ function createInterface(msg) {
 }
 function openCompiledFile(msg) {
     let params = msg.params;
-    let filePath = url_1.fileURLToPath(params.uri);
+    let filePath = (0, url_1.fileURLToPath)(params.uri);
     let projDir = utils.findProjectRootOfFile(filePath);
     if (projDir === null) {
         let params = {

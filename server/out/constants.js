@@ -1,7 +1,11 @@
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
 }) : (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];
@@ -21,13 +25,15 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.bsconfigSuffixDefault = exports.bsconfigModuleDefault = exports.startBuildAction = exports.cmiExt = exports.resiExt = exports.resExt = exports.compilerLogPartialPath = exports.compilerDirPartialPath = exports.bsconfigPartialPath = exports.bsbLock = exports.bsbNodePartialPath = exports.rescriptNodePartialPath = exports.analysisProdPath = exports.analysisDevPath = exports.bscNativePartialPath = exports.bscNativeReScriptPartialPath = exports.jsonrpcVersion = void 0;
 const path = __importStar(require("path"));
+let archString = process.arch == "arm64" ? "-aarch64" : "";
+let platformString = process.platform + archString;
 // See https://microsoft.github.io/language-server-protocol/specification Abstract Message
 // version is fixed to 2.0
 exports.jsonrpcVersion = "2.0";
-exports.bscNativeReScriptPartialPath = path.join("node_modules", "rescript", process.platform, "bsc.exe");
-exports.bscNativePartialPath = path.join("node_modules", "bs-platform", process.platform, "bsc.exe");
+exports.bscNativeReScriptPartialPath = path.join("node_modules", "rescript", platformString, "bsc.exe");
+exports.bscNativePartialPath = path.join("node_modules", "bs-platform", platformString, "bsc.exe");
 exports.analysisDevPath = path.join(path.dirname(__dirname), "..", "analysis", "rescript-editor-analysis.exe");
-exports.analysisProdPath = path.join(path.dirname(__dirname), "analysis_binaries", process.platform, "rescript-editor-analysis.exe");
+exports.analysisProdPath = path.join(path.dirname(__dirname), "analysis_binaries", platformString, "rescript-editor-analysis.exe");
 // can't use the native bsb/rescript since we might need the watcher -w flag, which is only in the JS wrapper
 exports.rescriptNodePartialPath = path.join("node_modules", ".bin", "rescript");
 exports.bsbNodePartialPath = path.join("node_modules", ".bin", "bsb");

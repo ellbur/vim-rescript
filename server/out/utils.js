@@ -1,7 +1,11 @@
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
 }) : (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];
@@ -51,7 +55,7 @@ let findProjectRootOfFile = (source) => {
             return null;
         }
         else {
-            return exports.findProjectRootOfFile(dir);
+            return (0, exports.findProjectRootOfFile)(dir);
         }
     }
 };
@@ -83,7 +87,7 @@ let findBscNativeOfFile = (source) => {
         return null;
     }
     else {
-        return exports.findBscNativeOfFile(dir);
+        return (0, exports.findBscNativeOfFile)(dir);
     }
 };
 exports.findBscNativeOfFile = findBscNativeOfFile;
@@ -112,14 +116,14 @@ let findNodeBuildOfProjectRoot = (projectRootPath) => {
 exports.findNodeBuildOfProjectRoot = findNodeBuildOfProjectRoot;
 let formatCode = (filePath, code) => {
     let extension = path.extname(filePath);
-    let formatTempFileFullPath = exports.createFileInTempDir(extension);
+    let formatTempFileFullPath = (0, exports.createFileInTempDir)(extension);
     fs_1.default.writeFileSync(formatTempFileFullPath, code, {
         encoding: "utf-8",
     });
     try {
         // See comment on findBscNativeDirOfFile for why we need
         // to recursively search for bsc.exe upward
-        let bscNativePath = exports.findBscNativeOfFile(filePath);
+        let bscNativePath = (0, exports.findBscNativeOfFile)(filePath);
         // Default to using the project formatter. If not, use the one we ship with
         // the analysis binary in the extension itself.
         if (bscNativePath != null) {
@@ -135,7 +139,7 @@ let formatCode = (filePath, code) => {
             };
         }
         else {
-            let result = exports.runAnalysisAfterSanityCheck(formatTempFileFullPath, ["format", formatTempFileFullPath], false);
+            let result = (0, exports.runAnalysisAfterSanityCheck)(formatTempFileFullPath, ["format", formatTempFileFullPath], false);
             // The formatter returning an empty string means it couldn't format the
             // sources, probably because of errors. In that case, we bail from
             // formatting by returning the unformatted content.
@@ -171,7 +175,7 @@ let runAnalysisAfterSanityCheck = (filePath, args, projectRequired = false) => {
     else {
         return null;
     }
-    let projectRootPath = exports.findProjectRootOfFile(filePath);
+    let projectRootPath = (0, exports.findProjectRootOfFile)(filePath);
     if (projectRootPath == null && projectRequired) {
         return null;
     }
@@ -184,7 +188,7 @@ let runAnalysisAfterSanityCheck = (filePath, args, projectRequired = false) => {
 };
 exports.runAnalysisAfterSanityCheck = runAnalysisAfterSanityCheck;
 let runAnalysisCommand = (filePath, args, msg, projectRequired = true) => {
-    let result = exports.runAnalysisAfterSanityCheck(filePath, args, projectRequired);
+    let result = (0, exports.runAnalysisAfterSanityCheck)(filePath, args, projectRequired);
     let response = {
         jsonrpc: c.jsonrpcVersion,
         id: msg.id,
@@ -193,7 +197,7 @@ let runAnalysisCommand = (filePath, args, msg, projectRequired = true) => {
     return response;
 };
 exports.runAnalysisCommand = runAnalysisCommand;
-let getReferencesForPosition = (filePath, position) => exports.runAnalysisAfterSanityCheck(filePath, [
+let getReferencesForPosition = (filePath, position) => (0, exports.runAnalysisAfterSanityCheck)(filePath, [
     "references",
     filePath,
     position.line,
@@ -231,10 +235,10 @@ const getNamespaceNameFromBsConfig = (projDir) => {
         };
     }
     if (bsconfig.namespace === true) {
-        result = exports.toCamelCase(bsconfig.name);
+        result = (0, exports.toCamelCase)(bsconfig.name);
     }
     else if (typeof bsconfig.namespace === "string") {
-        result = exports.toCamelCase(bsconfig.namespace);
+        result = (0, exports.toCamelCase)(bsconfig.namespace);
     }
     return {
         kind: "success",
@@ -295,7 +299,7 @@ let getCompiledFilePath = (filePath, projDir) => {
         suffix = bsconfig.suffix;
     }
     let partialFilePath = filePath.split(projDir)[1];
-    let compiledPartialPath = exports.replaceFileExtension(partialFilePath, suffix);
+    let compiledPartialPath = (0, exports.replaceFileExtension)(partialFilePath, suffix);
     let result = path.join(projDir, pathFragment, compiledPartialPath);
     return {
         kind: "success",
